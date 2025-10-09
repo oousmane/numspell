@@ -3,7 +3,7 @@
     "path": "~/numspell/DESCRIPTION",
     "project_path": "DESCRIPTION",
     "type": "dcf",
-    "hash": "3434963316",
+    "hash": "2087365903",
     "contents": "",
     "dirty": false,
     "created": 1760048280377.0,
@@ -12,15 +12,15 @@
     "properties": {
         "source_window_id": "",
         "Source": "Source",
-        "cursorPosition": "5,86",
+        "cursorPosition": "4,69",
         "scrollLine": "0"
     },
     "folds": "",
-    "lastKnownWriteTime": 1760048365,
+    "lastKnownWriteTime": 1760048824,
     "encoding": "UTF-8",
     "collab_server": "",
     "source_window": "",
-    "last_content_update": 1760048365662,
+    "last_content_update": 1760048824281,
     "read_only": false,
     "read_only_alternatives": []
 }
