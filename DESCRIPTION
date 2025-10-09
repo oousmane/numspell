@@ -1,0 +1,18 @@
+Package: numspell
+Type: Package
+Title: Spell Numbers into Words (French and English)
+Version: 0.1.0
+Authors@R: c(
+    person("Ousmane", "Ouedraogo", role = c("aut", "cre"), email = "oousmane@proton.me")
+)
+Description: Convert integers and decimals into words with proper orthography 
+    in French and English. Supports negative numbers, large magnitudes, and 
+    currency-like formatting with units and subunits.
+License: MIT + file LICENSE
+Encoding: UTF-8
+Depends: R (>= 3.6)
+Suggests: testthat (>= 3.0.0)
+Language: en
+Roxygen: list(markdown = TRUE)
+RoxygenNote: 7.3.2
+Config/testthat/edition: 3
