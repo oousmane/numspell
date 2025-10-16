@@ -1,3 +1,168 @@
+#' French number words - Utility functions (internal)
+#'
+#' @keywords internal
+#' @noRd
+
+.unit_words <- c(
+  "zéro","un","deux","trois","quatre","cinq","six","sept","huit","neuf",
+  "dix","onze","douze","treize","quatorze","quinze","seize"
+)
+
+#' Convert numbers under 100 to French words
+#' @keywords internal
+#' @noRd
+.under_100 <- function(n) {
+  stopifnot(n >= 0, n < 100)
+  if (n <= 16) return(.unit_words[n + 1])
+  tens_words <- c("vingt","trente","quarante","cinquante","soixante")
+  if (n < 20) {
+    return(paste0("dix-", .unit_words[n - 10 + 1]))
+  } else if (n < 70) {
+    d <- n %/% 10; r <- n %% 10
+    base <- tens_words[d - 1L]
+    if (r == 0) return(base)
+    if (r == 1) return(paste(base, "et un"))
+    return(paste0(base, "-", .under_100(r)))
+  } else if (n < 80) {
+    r <- n - 60
+    if (r == 11) return("soixante et onze")       # 71
+    return(paste("soixante", .under_100(r)))
+  } else {
+    r <- n - 80
+    base <- "quatre-vingts"
+    if (r == 0) return(base)                      # 80 (with 's')
+    base <- "quatre-vingt"                        # drop 's' if followed
+    if (r == 1) return(paste0(base, "-un"))       # no 'et' at 81
+    return(paste(base, .under_100(r)))
+  }
+}
+
+#' Convert numbers under 1000 to French words
+#' @keywords internal
+#' @noRd
+.under_1000 <- function(n) {
+  stopifnot(n >= 0, n < 1000)
+  if (n < 100) return(.under_100(n))
+  cts <- n %/% 100; r <- n %% 100
+  if (cts == 1) {
+    if (r == 0) return("cent")
+    return(paste("cent", .under_100(r)))
+  } else {
+    if (r == 0) return(paste(.unit_words[cts + 1], "cents"))
+    return(paste(.unit_words[cts + 1], "cent", .under_100(r)))
+  }
+}
+
+#' Convert number chunks with scale words (million, milliard, etc.)
+#' @keywords internal
+#' @noRd
+.chunk_with_scale <- function(n, scale_word, pluralize = TRUE) {
+  w <- .under_1000(n)
+  if (scale_word == "mille") {
+    return(if (n == 1) "mille" else paste(w, "mille"))
+  }
+  if (pluralize && n > 1) paste(w, paste0(scale_word, "s")) else paste(w, scale_word)
+}
+
+#' Convert a single integer to French words
+#' @keywords internal
+#' @noRd
+.spell_integer_one <- function(n) {
+  stopifnot(abs(n) < 1e12)
+  if (n == 0) return("zéro")
+  if (n < 0) return(paste("moins", .spell_integer_one(-n)))
+
+  out <- character()
+  milliards <- n %/% 1e9; n <- n %% 1e9
+  millions  <- n %/% 1e6; n <- n %% 1e6
+  milliers  <- n %/% 1e3; n <- n %% 1e3
+  reste     <- n
+
+  if (milliards) out <- c(out, .chunk_with_scale(milliards, "milliard"))
+  if (millions)  out <- c(out, .chunk_with_scale(millions,  "million"))
+  if (milliers)  out <- c(out, .chunk_with_scale(milliers,  "mille"))
+  if (reste)     out <- c(out, .under_1000(reste))
+  paste(out, collapse = " ")
+}
+
+#' Spell out decimal digits
+#' @keywords internal
+#' @noRd
+.spell_decimal_digits <- function(s) {
+  digits <- strsplit(s, "")[[1]]
+  paste(sapply(digits, function(d) .unit_words[as.integer(d) + 1]), collapse = " ")
+}
+
+#' Choose correct unit form (singular/plural)
+#' @keywords internal
+#' @noRd
+.choose_unit <- function(n, unit, unit_plural) {
+  if (is.null(unit)) return(NULL)
+  if (!is.null(unit_plural)) return(if (abs(n) == 1) unit else unit_plural)
+  ends_s <- grepl("s$", unit, perl = TRUE)
+  if (abs(n) == 1) {
+    if (ends_s) sub("s$", "", unit) else unit
+  } else {
+    if (ends_s) unit else paste0(unit, "s")
+  }
+}
+
+#' Convert a single value to French words
+#' @keywords internal
+#' @noRd
+.fr_one <- function(v, decimal, unit, unit_plural, subunit) {
+  if (is.na(v)) return(NA_character_)
+
+  if (decimal == "digits") {
+    s <- as.character(v)
+    if (!grepl("\\.", s, fixed = TRUE)) {
+      words <- .spell_integer_one(as.numeric(s))
+      if (!is.null(unit)) {
+        u <- .choose_unit(as.numeric(s), unit, unit_plural)
+        words <- paste(words, u)
+      }
+      return(words)
+    }
+    parts <- strsplit(s, "\\.", fixed = TRUE)[[1]]
+    intp <- suppressWarnings(as.numeric(parts[1]))
+    decp <- sub("0+$", "", parts[2])
+    if (identical(decp, "") || is.na(decp)) {
+      words <- .spell_integer_one(intp)
+      if (!is.null(unit)) {
+        u <- .choose_unit(intp, unit, unit_plural)
+        words <- paste(words, u)
+      }
+      return(words)
+    } else {
+      return(paste(.spell_integer_one(intp), "virgule", .spell_decimal_digits(decp)))
+    }
+  } else {
+    # currency-like
+    sign_str <- if (v < 0) "moins " else ""
+    v_abs <- abs(v)
+    intp  <- floor(v_abs)
+    cents <- round((v_abs - intp) * 100)
+    if (cents == 100) { intp <- intp + 1; cents <- 0 }
+
+    major <- if (is.null(unit)) "euro" else unit
+    minor <- subunit
+    major_pl <- if (!is.null(unit_plural)) unit_plural else paste0(major, "s")
+    minor_pl <- paste0(minor, "s")
+
+    major_word <- if (intp == 1) major else major_pl
+    minor_word <- if (cents == 1) minor else minor_pl
+
+    if (cents == 0) {
+      paste0(sign_str, .spell_integer_one(intp), " ", major_word)
+    } else if (intp == 0) {
+      paste0(sign_str, .spell_integer_one(cents), " ", minor_word)
+    } else {
+      paste0(sign_str, .spell_integer_one(intp), " ", major_word,
+             " et ", .spell_integer_one(cents), " ", minor_word)
+    }
+  }
+}
+
 #' French number words
 #'
 #' @description
@@ -31,144 +196,6 @@ to_words_fr <- function(x,
 
   decimal <- match.arg(decimal)
 
-  unit_words <- c(
-    "zéro","un","deux","trois","quatre","cinq","six","sept","huit","neuf",
-    "dix","onze","douze","treize","quatorze","quinze","seize"
-  )
-
-  under_100 <- function(n) {
-    stopifnot(n >= 0, n < 100)
-    if (n <= 16) return(unit_words[n + 1])
-    tens_words <- c("vingt","trente","quarante","cinquante","soixante")
-    if (n < 20) {
-      return(paste0("dix-", unit_words[n - 10 + 1]))
-    } else if (n < 70) {
-      d <- n %/% 10; r <- n %% 10
-      base <- tens_words[d - 1L]
-      if (r == 0) return(base)
-      if (r == 1) return(paste(base, "et un"))
-      return(paste0(base, "-", under_100(r)))
-    } else if (n < 80) {
-      r <- n - 60
-      if (r == 11) return("soixante et onze")       # 71
-      return(paste("soixante", under_100(r)))
-    } else {
-      r <- n - 80
-      base <- "quatre-vingts"
-      if (r == 0) return(base)                      # 80 (with 's')
-      base <- "quatre-vingt"                        # drop 's' if followed
-      if (r == 1) return(paste0(base, "-un"))       # no 'et' at 81
-      return(paste(base, under_100(r)))
-    }
-  }
-
-  under_1000 <- function(n) {
-    stopifnot(n >= 0, n < 1000)
-    if (n < 100) return(under_100(n))
-    cts <- n %/% 100; r <- n %% 100
-    if (cts == 1) {
-      if (r == 0) return("cent")
-      return(paste("cent", under_100(r)))
-    } else {
-      if (r == 0) return(paste(unit_words[cts + 1], "cents"))
-      return(paste(unit_words[cts + 1], "cent", under_100(r)))
-    }
-  }
-
-  chunk_with_scale <- function(n, scale_word, pluralize = TRUE) {
-    w <- under_1000(n)
-    if (scale_word == "mille") {
-      return(if (n == 1) "mille" else paste(w, "mille"))
-    }
-    if (pluralize && n > 1) paste(w, paste0(scale_word, "s")) else paste(w, scale_word)
-  }
-
-  spell_integer_one <- function(n) {
-    stopifnot(abs(n) < 1e12)
-    if (n == 0) return("zéro")
-    if (n < 0) return(paste("moins", spell_integer_one(-n)))
-
-    out <- character()
-    milliards <- n %/% 1e9; n <- n %% 1e9
-    millions  <- n %/% 1e6; n <- n %% 1e6
-    milliers  <- n %/% 1e3; n <- n %% 1e3
-    reste     <- n
-
-    if (milliards) out <- c(out, chunk_with_scale(milliards, "milliard"))
-    if (millions)  out <- c(out, chunk_with_scale(millions,  "million"))
-    if (milliers)  out <- c(out, chunk_with_scale(milliers,  "mille"))
-    if (reste)     out <- c(out, under_1000(reste))
-    paste(out, collapse = " ")
-  }
-
-  spell_decimal_digits <- function(s) {
-    digits <- strsplit(s, "")[[1]]
-    paste(sapply(digits, function(d) unit_words[as.integer(d) + 1]), collapse = " ")
-  }
-
-  choose_unit <- function(n, unit, unit_plural) {
-    if (is.null(unit)) return(NULL)
-    if (!is.null(unit_plural)) return(if (abs(n) == 1) unit else unit_plural)
-    ends_s <- grepl("s$", unit, perl = TRUE)
-    if (abs(n) == 1) {
-      if (ends_s) sub("s$", "", unit) else unit
-    } else {
-      if (ends_s) unit else paste0(unit, "s")
-    }
-  }
-
-  fr_one <- function(v) {
-    if (is.na(v)) return(NA_character_)
-
-    if (decimal == "digits") {
-      s <- as.character(v)
-      if (!grepl("\\.", s, fixed = TRUE)) {
-        words <- spell_integer_one(as.numeric(s))
-        if (!is.null(unit)) {
-          u <- choose_unit(as.numeric(s), unit, unit_plural)
-          words <- paste(words, u)
-        }
-        return(words)
-      }
-      parts <- strsplit(s, "\\.", fixed = TRUE)[[1]]
-      intp <- suppressWarnings(as.numeric(parts[1]))
-      decp <- sub("0+$", "", parts[2])
-      if (identical(decp, "") || is.na(decp)) {
-        words <- spell_integer_one(intp)
-        if (!is.null(unit)) {
-          u <- choose_unit(intp, unit, unit_plural)
-          words <- paste(words, u)
-        }
-        return(words)
-      } else {
-        return(paste(spell_integer_one(intp), "virgule", spell_decimal_digits(decp)))
-      }
-    } else {
-      # currency-like
-      sign_str <- if (v < 0) "moins " else ""
-      v_abs <- abs(v)
-      intp  <- floor(v_abs)
-      cents <- round((v_abs - intp) * 100)
-      if (cents == 100) { intp <- intp + 1; cents <- 0 }
-
-      major <- if (is.null(unit)) "euro" else unit
-      minor <- subunit
-      major_pl <- if (!is.null(unit_plural)) unit_plural else paste0(major, "s")
-      minor_pl <- paste0(minor, "s")
-
-      major_word <- if (intp == 1) major else major_pl
-      minor_word <- if (cents == 1) minor else minor_pl
-
-      if (cents == 0) {
-        paste0(sign_str, spell_integer_one(intp), " ", major_word)
-      } else if (intp == 0) {
-        paste0(sign_str, spell_integer_one(cents), " ", minor_word)
-      } else {
-        paste0(sign_str, spell_integer_one(intp), " ", major_word,
-               " et ", spell_integer_one(cents), " ", minor_word)
-      }
-    }
-  }
-
-  vapply(x, fr_one, FUN.VALUE = character(1))
+  vapply(x, .fr_one, FUN.VALUE = character(1),
+         decimal = decimal, unit = unit, unit_plural = unit_plural, subunit = subunit)
 }
